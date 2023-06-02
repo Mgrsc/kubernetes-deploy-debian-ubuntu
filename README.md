@@ -17,7 +17,8 @@ For other regions, please use general.
 
 ```
 Note:
-The above four steps should be executed on all nodes. Then configure the control-plane and node according to your specific requirements.
+The above four steps should be executed on all nodes.
+Then configure the control-plane and node according to your specific requirements.
 ```
 
 

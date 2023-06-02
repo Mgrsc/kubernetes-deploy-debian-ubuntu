@@ -9,7 +9,7 @@ For mainland China, please use zh-cn.
 For other regions, please use general.
 
 1. Configure `/etc/hosts` first.
-2. Execute `sudo bash debianinit.sh`.
+2. Execute `sudo bash init.sh`.
 3. Execute `sudo bash debianinit.sh`.
 4. Execute `bash kuber.sh`.
 5. Then，edit `kubeadm-config.yaml` according to your specific requirements.

@@ -15,12 +15,11 @@ For other regions, please use general.
 5. Then，edit `kubeadm-config.yaml` according to your specific requirements.
 6. run `kubeadm init --config kubeadm-config.yaml`
 
+
+
 ```
 Note:
-The above four steps should be executed on all nodes. Then configure the control-plane and node according to your specific requirements.
+The above four steps should be executed on all nodes. 
+Then configure the control-plane and node according to your specific requirements.
 ```
-
-
-
-
 

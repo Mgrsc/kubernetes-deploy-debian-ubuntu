@@ -19,7 +19,11 @@ For other regions, please use general.
 
 ```
 Note:
+<<<<<<< HEAD
 The above four steps should be executed on all nodes. 
+=======
+The above four steps should be executed on all nodes.
+>>>>>>> 056ad1ca6088850e297e4c5775dfd28e7c5bed1c
 Then configure the control-plane and node according to your specific requirements.
 ```
 

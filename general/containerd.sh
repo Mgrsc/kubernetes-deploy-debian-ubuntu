@@ -1,101 +1,151 @@
 #!/bin/bash
+
+# Enable strict mode and error handling
 set -eo pipefail
+
+# Install packages using apt-get
+install_package() {
+  sudo apt-get install -y "$@"
+}
+
+# Download a file from a URL and save it locally
+download_file() {
+  local url="$1"     # URL of file to download
+  local dest="$2"    # Local destination of the file
+  if [ ! -f "${dest}" ]; then  # If file does not exist locally, download it
+    wget "${url}" -O "${dest}"
+  fi
+}
+
+# Remove a local file
+remove_file() {
+  local file="$1"   # File to remove
+  if [ -f "${file}" ]; then   # If file exists, remove it
+    rm -rf "${file}"
+    echo "${file} has been deleted!"
+  fi
+}
+
+check_installed() {
+  if [ -f "$1" ]; then
+    echo "$2 has been installed successfully!"
+  else
+    echo "$2 not installed"
+  fi
+}
+
+
+
 # Install required packages
-sudo apt-get install -y jq wget sudo
+install_package jq wget
+
+# Disable swap
+sudo swapoff -a
+sudo sed -i '/ swap / s/^/#/' /etc/fstab
+
+# Enable kernel modules required for Kubernetes
+cat <<EOF | sudo tee /etc/modules-load.d/k8s.conf
+overlay
+br_netfilter
+EOF
+sudo modprobe overlay
+sudo modprobe br_netfilter
+
+# Enable IP forwarding and netfilter
+cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-iptables = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward = 1
+EOF
+sudo sysctl --system
 
 # Download and install containerd
-LATEST=$(curl --silent "https://api.github.com/repos/containerd/containerd/releases/latest" | jq -r .tag_name)
-URL="https://github.com/containerd/containerd/releases/download/${LATEST}/containerd-${LATEST#v}-linux-amd64.tar.gz"
-wget "${URL}"
-sudo tar xzvf "containerd-${LATEST#v}-linux-amd64.tar.gz" -C /usr/local
+CONTAINERD_TAR=`ls | grep containerd-.*linux-amd64.tar.gz`
+if [ "$CONTAINERD_TAR" != "" ]; then    # If containerd tar file exists locally, extract it
+  sudo tar xzvf "${CONTAINERD_TAR}" -C /usr/local
+else                                       # Otherwise, download the latest release
+  LATEST_CONTAINERD=$(curl --silent "https://api.github.com/repos/containerd/containerd/releases/latest" | jq -r .tag_name)
+  CONTAINERD_URL="https://github.com/containerd/containerd/releases/download/${LATEST_CONTAINERD}/containerd-${LATEST_CONTAINERD#v}-linux-amd64.tar.gz"
+  CONTAINERD_TAR="containerd-${LATEST_CONTAINERD#v}-linux-amd64.tar.gz"
+  download_file "${CONTAINERD_URL}" "${CONTAINERD_TAR}"
+  sudo tar xzvf "${CONTAINERD_TAR}" -C /usr/local
+fi
 
-# Download and enable containerd systemd service
-wget https://raw.githubusercontent.com/containerd/containerd/main/containerd.service -O /etc/systemd/system/containerd.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now containerd
+# Install the containerd service file and start containerd
+CONTAINERD_SERVICE_DEST="/etc/systemd/system/containerd.service"
+if [ -f containerd.service ]; then  
+  sudo cp containerd.service "${CONTAINERD_SERVICE_DEST}"
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now containerd
+else                                          # Otherwise, download the service file and start containerd
+  CONTAINERD_SERVICE_URL="https://raw.githubusercontent.com/containerd/containerd/main/containerd.service"
+  download_file "${CONTAINERD_SERVICE_URL}" "${CONTAINERD_SERVICE_DEST}"
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now containerd
+fi
 
-# Install runc
-LATESTRUNC=$(curl -s https://api.github.com/repos/opencontainers/runc/releases/latest | jq -r .tag_name)
-URLRUNC="https://github.com/opencontainers/runc/releases/download/${LATESTRUNC}/runc.amd64"
-wget "${URLRUNC}"
-sudo install -m 755 runc.amd64 /usr/local/sbin/runc
-
+# Download and install runc
+RUNC_DEST="runc.amd64"
+if [ -f "$RUNC_DEST" ]; then
+  sudo install -m 755 "$RUNC_DEST" /usr/local/sbin/runc 
+else
+  LATESTRUNC=$(curl -s https://api.github.com/repos/opencontainers/runc/releases/latest | jq -r .tag_name)
+  URLRUNC="https://github.com/opencontainers/runc/releases/download/${LATESTRUNC}/runc.amd64"
+  download_file "${URLRUNC}" "${RUNC_DEST}"
+  sudo install -m 755 "$RUNC_DEST" /usr/local/sbin/runc
+fi
 
 # Install CNI plugins
-LATESTCNI=$(curl -s https://api.github.com/repos/containernetworking/plugins/releases/latest | jq -r .tag_name)
-URLCNI="https://github.com/containernetworking/plugins/releases/download/${LATESTCNI}/cni-plugins-linux-amd64-${LATESTCNI}.tgz"
-wget "${URLCNI}"
-mkdir -p /opt/cni/bin
-sudo tar xzvf "cni-plugins-linux-amd64-${LATESTCNI}.tgz" -C /opt/cni/bin
-
-
-# Check installation
-if [ -f "/usr/local/bin/containerd" ]; then
-  echo "containerd ${LATEST} install access"
+CNI_TAR=$(ls cni-plugins-linux-amd64-*.tgz 2>/dev/null)
+if [ -n "$CNI_TAR" ]; then
+  LATESTCNI=$(echo "$CNI_TAR" | sed 's/cni-plugins-linux-amd64-\(.*\).tgz/\1/')
+  mkdir -p /opt/cni/bin
+  sudo tar xzf "cni-plugins-linux-amd64-${LATESTCNI}.tgz" -C /opt/cni/bin
 else
-  echo "containerd ${LATEST} not installed"
+  LATESTCNI=$(curl -s https://api.github.com/repos/containernetworking/plugins/releases/latest | jq -r .tag_name)    
+  URLCNI="https://github.com/containernetworking/plugins/releases/download/${LATESTCNI}/cni-plugins-linux-amd64-${LATESTCNI}.tgz"
+  CNI_TAR="cni-plugins-linux-amd64-${LATESTCNI}.tgz"
+  download_file "${URLCNI}" "${CNI_TAR}"
+  mkdir -p /opt/cni/bin 
+  sudo tar xzf "$CNI_TAR" -C /opt/cni/bin  
 fi
 
-if [ -f "/etc/systemd/system/containerd.service" ]; then
-  echo "containerd service access"
-else
-  echo "/etc/systemd/system/containerd.service not found"
-fi
-
-if [ -f "/usr/local/sbin/runc" ]; then
-  echo "runc ${LATESTRUNC} has been installed successfully!"
-else
-  echo "runc ${LATESTRUNC} has been installed fail !!!!!!!"
-fi
-
-if [ -f "/opt/cni/bin/dhcp" ]; then
-  echo "cni-plugins ${LATESTCNI} has been installed successfully!"
-else
-  echo "cni-plugins ${LATESTCNI} has been installed fail !!!!!!"
-fi
+check_installed "/usr/local/bin/containerd" "containerd ${VERSION} install access"
+sleep 1
+check_installed "/etc/systemd/system/containerd.service" "containerd service access"
+sleep 1
+check_installed "/usr/local/sbin/runc" "runc ${LATESTRUNC}"
+sleep 1
+check_installed "/opt/cni/bin/dhcp" "cni-plugins ${LATESTCNI}"
 
 
-# Configure containerd
-sudo mkdir -p /etc/containerd/
+# Update containerd configuration
+sudo mkdir -p /etc/containerd
 containerd config default | sudo tee /etc/containerd/config.toml >/dev/null 2>&1
-sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
-sudo sed -i 's/sandbox_image = "registry.k8s.io\/pause:3\.8"/sandbox_image = "registry.k8s.io\/pause:3.9"/g' /etc/containerd/config.toml
+sudo sed -i 's%registry.k8s.io/pause:3.8%registry.aliyuncs.com/google_containers/pause:3.9%g' /etc/containerd/config.toml
+sudo sed -i 's%SystemdCgroup = false%SystemdCgroup = true%g' /etc/containerd/config.toml
+sudo systemctl daemon-reload
 sudo systemctl restart containerd
 
-# Configure crictl
+# Create a config for crictl
 sudo tee /etc/crictl.yaml > /dev/null <<EOF
-pull-image-on-create: false
-disable-pull-on-run: false
 runtime-endpoint: unix:///run/containerd/containerd.sock
 image-endpoint: unix:///run/containerd/containerd.sock
 timeout: 10
-debug: false
 EOF
 
-
-
-# Download and install kubectl
-DOWNLOAD_DIR="${HOME}"
+# Ask if downloaded files should be removed and take action
 echo "Download completed! Do you want to remove downloaded files? (y/n)"
 read answer
 if [ "$answer" == "y" ] || [ "$answer" == "Y" ]; then
-  if [ -f "${DOWNLOAD_DIR}/containerd-${LATEST#v}-linux-amd64.tar.gz" ]; then
-    rm -rf  "${DOWNLOAD_DIR}/containerd-${LATEST#v}-linux-amd64.tar.gz"
-    echo "containerd-${LATEST#v}-linux-amd64.tar.gz has been deleted!"
-  fi
-
-  if [ -f "${DOWNLOAD_DIR}/runc.amd64" ]; then
-    rm -rf "${DOWNLOAD_DIR}/runc.amd64"
-    echo "runc.amd64 has been deleted!"
-  fi
-  
-  if [ -f "${DOWNLOAD_DIR}/cni-plugins-linux-amd64-${LATESTCNI}.tgz" ]; then
-    rm -rf "${DOWNLOAD_DIR}/cni-plugins-linux-amd64-${LATESTCNI}.tgz"
-    echo "cni-plugins-linux-amd64-${LATESTCNI}.tgz has been deleted!"
-  fi
+  remove_file "${CONTAINERD_TAR}"
+  remove_file "${RUNC_DEST}"
+  remove_file "${CNI_TAR}"
+  remove_file "containerd.service"
 else
-  echo "okey"
+  echo "Downloaded files are not removed!"
 fi
 
 
-echo "containerd ${LATEST} install access"
+
+echo "containerd ${LATEST_CONTAINERD} installation completed"

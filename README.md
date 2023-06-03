@@ -2,9 +2,11 @@
 
 Testing using Debian 11 and Ubuntu 22.04
 
+kubeadm deploy kubernetes
+
 ## usage
 
-For mainland China, please use zh-cn. 
+For mainland China, please use cn-zh. 
 
 For other regions, please use general.
 

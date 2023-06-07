@@ -24,14 +24,16 @@ EOF
 sudo sysctl --system
 
 
-apt-get update && apt-get install -y apt-transport-https ca-certificates
+apt-get update && apt-get install -y apt-transport-https
 curl https://mirrors.aliyun.com/kubernetes/apt/doc/apt-key.gpg | apt-key add - 
 cat <<EOF >/etc/apt/sources.list.d/kubernetes.list
 deb https://mirrors.aliyun.com/kubernetes/apt/ kubernetes-xenial main
 EOF
+echo -e "你要安装什么版本？？？？？？"
+read k8s_version
+apt-get update 
+apt-get install -y kubelet=${k8s_version}* kubeadm=${k8s_version}* kubectl=${k8s_version}*
 
-apt-get update
-apt-get install -y kubelet kubeadm kubectl
 
 apt-mark hold kubelet kubeadm kubectl
 systemctl enable --now kubelet

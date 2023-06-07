@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # Enable strict mode and error handling
+set -eo pipefail
 
 # Install packages using apt-get
 install_package() {
@@ -60,16 +61,20 @@ sysctl --system  > /dev/null
 
 echo -e "初始化好了！！！！别慌这才是第一步 \n"
 echo -e ".\n"
+
+
 # Download and install containerd
 CONTAINERD_TAR=`ls | grep containerd-.*linux-amd64.tar.gz` 
 if [ "$CONTAINERD_TAR" != "" ]; then    # If containerd tar file exists locally, extract it
   tar xzvf "${CONTAINERD_TAR}" -C /usr/local  > /dev/null
+  CONTAINERD_VERSION=$(echo "${CONTAINERD_TAR}" | sed -n 's/containerd-\(.*\)-linux-amd64.tar.gz/\1/p')
 else                                       # Otherwise, download the latest release
   LATEST_CONTAINERD=$(curl --silent "https://api.github.com/repos/containerd/containerd/releases/latest" | jq -r .tag_name)
   CONTAINERD_URL="https://github.com/containerd/containerd/releases/download/${LATEST_CONTAINERD}/containerd-${LATEST_CONTAINERD#v}-linux-amd64.tar.gz"
   CONTAINERD_TAR="containerd-${LATEST_CONTAINERD#v}-linux-amd64.tar.gz"
   download_file "${CONTAINERD_URL}" "${CONTAINERD_TAR}"
   tar xzvf "${CONTAINERD_TAR}" -C /usr/local  > /dev/null
+  CONTAINERD_VERSION="${LATEST_CONTAINERD#v}"
 fi
 
 echo -e ".. \n"
@@ -86,6 +91,8 @@ else                                          # Otherwise, download the service 
   systemctl enable --now containerd
 fi
 echo -e "...\n"
+
+
 # Download and install runc
 RUNC_DEST="runc.amd64"
 if [ -f "$RUNC_DEST" ]; then
@@ -97,6 +104,8 @@ else
   install -m 755 "$RUNC_DEST" /usr/local/sbin/runc
 fi
 echo -e "....\n"
+
+
 # Install CNI plugins
 CNI_TAR=$(ls cni-plugins-linux-amd64-*.tgz 2>/dev/null)  > /dev/null
 if [ -n "$CNI_TAR" ]; then
@@ -113,7 +122,7 @@ else
 fi
 echo -e ".....\n"
 echo ""
-check_installed "/usr/local/bin/containerd" "containerd ${VERSION}"
+check_installed "/usr/local/bin/containerd" "containerd:${CONTAINERD_VERSION}"
 sleep 1
 check_installed "/etc/systemd/system/containerd.service" "containerd service "
 sleep 1
